@@ -58,7 +58,7 @@ def employee_leave(UUID):
 def territory_config(UUID):
     # leaveAccrualPeriod (type = Beginning_Of_Year/Specific_Month/Employee_Start)
     
-    territoryConfig = {'leaveAccrualPeriod': 'Beginning_Of_Year', 'carryOver': True, 'carryOverLimit': True, 'carryOverLimitAmount': 5, 'Expiry': True, 'ExpiryNumber': 6, 'ExpiryUnit': 'months'}
+    territoryConfig = {'leaveAccrualPeriod': 'Beginning_Of_Year', 'carryOver': False, 'carryOverLimit': False, 'carryOverLimitAmount': None, 'Expiry': False, 'ExpiryNumber': None, 'ExpiryUnit': None}
     return territoryConfig
     
 def key_dates(employeeInput, leaves, territoryConfig, today):
@@ -78,27 +78,24 @@ def key_dates(employeeInput, leaves, territoryConfig, today):
     
     # accrual period start dates + accrual period end dates + expiry dates
     current_date = employeeInput['Start Date']
-    expiryDates = []
     
     while current_date <= today:
         if territoryConfig['leaveAccrualPeriod'] == "Beginning_Of_Year":     
             if current_date.month == 1 and current_date.day == 1:
                 keyDates.append({'Date': current_date, 'Description': "Leave Accrual Period Start Date", 'Balance': 0})
-                
-                if territoryConfig['ExpiryUnit'] == 'years':
-                    expiryDates.append(current_date + relativedelta(years =+ territoryConfig['ExpiryNumber']))
-                elif territoryConfig['ExpiryUnit'] == 'months':
-                    expiryDates.append(current_date + relativedelta(months =+ territoryConfig['ExpiryNumber']))
-                else:
-                    expiryDates.append(current_date + relativedelta(days =+ territoryConfig['ExpiryNumber']))
+                if territoryConfig['Expiry'] == True:
+                    if territoryConfig['ExpiryUnit'] == 'years':
+                        keyDates.append({'Date': current_date + relativedelta(years =+ territoryConfig['ExpiryNumber']), 'Period Start': current_date, 'Description': "Expiry", 'Balance Before': 0,'Balance': 0})
+
+                    elif territoryConfig['ExpiryUnit'] == 'months':
+                        keyDates.append({'Date': current_date + relativedelta(months =+ territoryConfig['ExpiryNumber']), 'Period Start': current_date, 'Description': "Expiry", 'Balance Before': 0, 'Balance': 0})
+                    else:
+                        keyDates.append({'Date': current_date + relativedelta(days =+ territoryConfig['ExpiryNumber']), 'Period Start': current_date, 'Description': "Expiry", 'Balance Before': 0, 'Balance': 0})
                     
             if current_date.month == 12 and current_date.day == 31:
                 keyDates.append({'Date': current_date, 'Description': "Leave Accrual Period End Date", 'Balance': 0})
                 
-            if territoryConfig['Expiry'] == True:
-                if current_date.month == 10 and current_date.day == 15:
-                    keyDates.append({'Date': current_date, 'Description': "Expiry", 'Balance': 0})
-                    
+                                    
         # elif territoryConfig['leaveAccrualPeriod'] == "Employee_Start":
         #    if current_date.month == employeeInput['Start Date'].month and current_date.day == employeeInput['Start Date'].day:
         #         keyDates.append({'Date': current_date, 'Description': "Leave Accrual Period Start Date", 'Balance': None})
@@ -109,7 +106,6 @@ def key_dates(employeeInput, leaves, territoryConfig, today):
         #     print("From Specific Month")
         
         current_date += timedelta(days=1)
-    print(expiryDates)
     sortedKeyDates = sorted(keyDates, key=lambda x: x['Date'])
     return sortedKeyDates
     
@@ -119,10 +115,13 @@ def accrual_history(keyDates, territoryConfig, employeeInput):
     
     for i in range(len(keyDates)):
 
-        # find duration
-        duration = keyDates[i]['Date'] - keyDates[i - 1]['Date']
-        # find accrual
-        accruedLeave = duration.total_seconds()*accrualRatepd/(3600*24)
+        if i > 0:
+            # find duration
+            duration = keyDates[i]['Date'] - keyDates[i - 1]['Date']
+            # find accrual
+            accruedLeave = duration.total_seconds()*accrualRatepd/(3600*24)
+        else:
+            accruedLeave = 0
         
         if keyDates[i]['Description'] == 'Leave Accrual Period End Date':            
             # find new balance
@@ -154,14 +153,24 @@ def accrual_history(keyDates, territoryConfig, employeeInput):
         elif keyDates[i]['Description'] == 'Today':
             # find new balance
             keyDates[i]['Balance'] = accruedLeave + keyDates[i - 1]['Balance']
-            
-            
 
         elif keyDates[i]['Description'] == 'Expiry':
-            print('Dog')
+            # find new balance before
+            keyDates[i]['Balance Before'] = accruedLeave + keyDates[i - 1]['Balance']
+            
+            leaveTaken = 0
+            
+            for date in keyDates:
+                if date['Date'] >= keyDates[i]['Period Start'] and date['Date'] < keyDates[i]['Date'] and date['Description'] == 'Leave':
+                    leaveTaken += date['Duration']
+                    
+                if leaveTaken >= territoryConfig['carryOverLimitAmount']:
+                    keyDates[i]['Balance'] = keyDates[i]['Balance Before']
+                else:
+                    keyDates[i]['Balance'] = keyDates[i]['Balance Before'] - territoryConfig['carryOverLimitAmount'] + leaveTaken
         
-        print('Key Date Number:',i, '- Description:',keyDates[i]['Description'])    
-        print('Balance:', keyDates[i]['Balance'] )
+        print()
+        print('Key Date Number:', i, '- Accrual:', accruedLeave, '- Key Date:', keyDates[i])    
 
     return keyDates
     
